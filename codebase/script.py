@@ -117,73 +117,37 @@ def create_brochure(company_name, url, save_folder=""):
 
 
 def choose_save_folder():
-    """Open a native folder picker on the machine running this app."""
-    system = platform.system()
+    """Open a native folder picker and return the selected path."""
+    pickers = {
+        "Darwin": ["osascript", "-e", 'POSIX path of (choose folder)'],
+        "Windows": [
+            "powershell", "-NoProfile", "-Command",
+            "Add-Type -AssemblyName System.Windows.Forms; "
+            "$d = New-Object System.Windows.Forms.FolderBrowserDialog; "
+            "if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath }",
+        ],
+    }
+    cmd = pickers.get(platform.system(), [
+        sys.executable, "-c",
+        "import tkinter as tk; from tkinter import filedialog; "
+        "r = tk.Tk(); r.withdraw(); r.attributes('-topmost', True); "
+        "print(filedialog.askdirectory(), end=''); r.destroy()",
+    ])
     try:
-        if system == "Darwin":
-            completed = subprocess.run(
-                [
-                    "osascript",
-                    "-e",
-                    'POSIX path of (choose folder with prompt "Choose a folder to save the brochure PDF")',
-                ],
-                capture_output=True,
-                text=True,
-            )
-        elif system == "Windows":
-            completed = subprocess.run(
-                [
-                    "powershell",
-                    "-NoProfile",
-                    "-Command",
-                    "Add-Type -AssemblyName System.Windows.Forms; "
-                    "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog; "
-                    "$dialog.Description = 'Choose a folder to save the brochure PDF'; "
-                    "if ($dialog.ShowDialog() -eq 'OK') { $dialog.SelectedPath }",
-                ],
-                capture_output=True,
-                text=True,
-            )
-        else:
-            completed = subprocess.run(
-                [
-                    sys.executable,
-                    "-c",
-                    "import tkinter as tk; from tkinter import filedialog; "
-                    "root = tk.Tk(); root.withdraw(); root.attributes('-topmost', True); "
-                    "print(filedialog.askdirectory(title='Choose a folder to save the brochure PDF'), end=''); "
-                    "root.destroy()",
-                ],
-                capture_output=True,
-                text=True,
-            )
+        folder = subprocess.run(cmd, capture_output=True, text=True).stdout.strip()
     except OSError:
-        return gr.update()
-
-    folder = (completed.stdout or "").strip()
-    if not folder:
-        return gr.update()
-    return folder
+        folder = ""
+    return folder or gr.update()
 
 
-# Showcasing the same functionality with the help of Gradio
 with gr.Blocks(title="Company Brochure Generator") as view:
     gr.Markdown(
         "# Company Brochure Generator\n"
-        "Enter a company name and URL to generate a brochure. "
-        "Choose a folder on this computer to save the PDF, or leave it unset to use the project's `brochures/` folder."
+        "Enter a company name and URL. Choose a save folder, or leave it unset to use `brochures/`."
     )
     with gr.Row():
-        company_name = gr.Textbox(
-            label="Company Name",
-            info="Enter a the name of the company you want to create a brochure for",
-            lines=7,
-        )
-        url = gr.Textbox(
-            label="Company URL",
-            info="Enter a the url of the company you want to create a brochure for",
-            lines=7,
-        )
+        company_name = gr.Textbox(label="Company Name", lines=7)
+        url = gr.Textbox(label="Company URL", lines=7)
     with gr.Row():
         choose_folder_btn = gr.Button("Choose save folder")
         save_folder = gr.Textbox(
@@ -194,12 +158,7 @@ with gr.Blocks(title="Company Brochure Generator") as view:
     generate_btn = gr.Button("Generate Brochure", variant="primary")
     message_output = gr.Markdown(label="Response:")
     pdf_output = gr.File(label="Download PDF")
-
-    choose_folder_btn.click(fn=choose_save_folder, outputs=save_folder)
-    generate_btn.click(
-        fn=create_brochure,
-        inputs=[company_name, url, save_folder],
-        outputs=[message_output, pdf_output],
-    )
+    choose_folder_btn.click(choose_save_folder, outputs=save_folder)
+    generate_btn.click(create_brochure, [company_name, url, save_folder], [message_output, pdf_output])
 
 view.launch(inbrowser=True)
